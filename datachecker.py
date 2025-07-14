@@ -75,9 +75,10 @@ with st.sidebar:
     # API Pricing Info
     st.subheader("📊 API Pricing")
     pricing_data = {
-        "Model": ["sonar-small-online", "sonar-medium-online", "sonar-large-online"],
-        "Cost per 1K tokens": ["$0.0002", "$0.0006", "$0.0010"],
-        "Best for": ["Quick queries", "Detailed analysis", "Complex research"]
+        "Model": ["sonar", "sonar-pro", "sonar-reasoning"],
+        "Input/1K tokens": ["$0.0003", "$0.001", "$0.002"],
+        "Output/1K tokens": ["$0.0015", "$0.005", "$0.01"],
+        "Best for": ["Quick queries", "Complex search", "Multi-step reasoning"]
     }
     st.table(pd.DataFrame(pricing_data))
 
@@ -102,15 +103,16 @@ search_type = st.radio(
 # Model selection
 model_option = st.selectbox(
     "🤖 Select Model:",
-    ["llama-3.1-sonar-small-128k-online", "llama-3.1-sonar-large-128k-online"],
-    help="Small: Faster & cheaper, Large: More detailed & expensive"
+    ["sonar", "sonar-pro", "sonar-reasoning"],
+    help="Sonar: Fast & cost-effective, Sonar Pro: Advanced search, Sonar Reasoning: Complex queries"
 )
 
 def calculate_cost(model, input_tokens, output_tokens):
     """Calculate API cost based on model and token usage"""
     pricing = {
-        "llama-3.1-sonar-small-128k-online": {"input": 0.0002, "output": 0.0002},
-        "llama-3.1-sonar-large-128k-online": {"input": 0.001, "output": 0.001}
+        "sonar": {"input": 0.0003, "output": 0.0015},
+        "sonar-pro": {"input": 0.001, "output": 0.005},
+        "sonar-reasoning": {"input": 0.002, "output": 0.01}
     }
     
     if model in pricing:
@@ -129,8 +131,7 @@ def make_api_request(prompt, model, search_type_name):
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": 2000,
-        "temperature": 0.2,
-        "return_citations": True
+        "temperature": 0.2
     }
     
     try:
