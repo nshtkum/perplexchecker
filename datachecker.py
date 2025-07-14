@@ -38,10 +38,10 @@ col1, col2 = st.columns(2)
 with col1:
     search_type = st.radio("Search Type:", ["Text Data", "Images", "Both"])
 with col2:
-    model = st.selectbox("Model:", ["sonar", "sonar-pro"])
+    model = st.selectbox("Model:", ["llama-3.1-sonar-small-128k-online", "llama-3.1-sonar-large-128k-online"])
 
 def make_api_call(prompt, model_name):
-    """Make API request"""
+    """Make API request to Perplexity"""
     if not api_key:
         st.error("Please enter API key")
         return None
@@ -55,7 +55,8 @@ def make_api_call(prompt, model_name):
         "model": model_name,
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": 800,
-        "temperature": 0.1
+        "temperature": 0.1,
+        "return_citations": True  # Optional: useful for verifying sources
     }
     
     try:
@@ -63,21 +64,29 @@ def make_api_call(prompt, model_name):
             "https://api.perplexity.ai/chat/completions",
             headers=headers,
             json=data,
-            timeout=30
+            timeout=60  # Increased timeout to 60 seconds
         )
+        
+        response.raise_for_status()  # Raises an exception for 4xx/5xx status codes
         
         if response.status_code == 200:
             result = response.json()
-            # Update usage stats
+            # Update usage stats (approximate cost, adjust as per actual pricing)
             st.session_state.api_calls += 1
-            cost = 0.001 if model_name == "sonar" else 0.005  # Estimated
+            cost = 0.0002 if "small" in model_name else 0.001  # Estimated cost per call
             st.session_state.total_cost += cost
             return result["choices"][0]["message"]["content"]
         else:
             st.error(f"API Error {response.status_code}: {response.text}")
             return None
             
-    except Exception as e:
+    except requests.exceptions.Timeout:
+        st.error("Request timed out. Try again or check your network connection.")
+        return None
+    except requests.exceptions.HTTPError as http_err:
+        st.error(f"HTTP Error: {str(http_err)}")
+        return None
+    except requests.exceptions.RequestException as e:
         st.error(f"Request failed: {str(e)}")
         return None
 
@@ -111,7 +120,7 @@ Keep response concise and well-formatted."""
                     result = make_api_call(prompt, model)
                 
                 if result:
-                    st.write(result)
+                    st.markdown(result)  # Use markdown for better formatting
                 else:
                     st.error("Failed to get property data")
             
@@ -128,7 +137,7 @@ List each URL on a separate line."""
                 
                 if result:
                     st.write("**Search Result:**")
-                    st.write(result)
+                    st.markdown(result)
                     
                     # Try to extract URLs
                     urls = re.findall(r'https?://[^\s]+\.(?:jpg|jpeg|png|webp)', result, re.IGNORECASE)
@@ -139,8 +148,8 @@ List each URL on a separate line."""
                             st.write(f"{i+1}. {url}")
                             try:
                                 st.image(url, width=300, caption=f"Image {i+1}")
-                            except:
-                                st.write("❌ Could not load image")
+                            except Exception as e:
+                                st.write(f"❌ Could not load image: {str(e)}")
                     else:
                         st.info("No direct image URLs found in response")
                 else:
@@ -158,7 +167,7 @@ List direct image URLs from real estate websites."""
                     result = make_api_call(prompt, model)
                 
                 if result:
-                    st.write(result)
+                    st.markdown(result)
                     
                     # Extract and display images
                     urls = re.findall(r'https?://[^\s]+\.(?:jpg|jpeg|png|webp)', result, re.IGNORECASE)
@@ -167,8 +176,8 @@ List direct image URLs from real estate websites."""
                         for i, url in enumerate(urls[:3]):
                             try:
                                 st.image(url, width=300, caption=f"Image {i+1}")
-                            except:
-                                st.write(f"❌ Could not load: {url}")
+                            except Exception as e:
+                                st.write(f"❌ Could not load: {url}: {str(e)}")
                     else:
                         st.info("No image URLs found")
                 else:
@@ -179,7 +188,7 @@ List direct image URLs from real estate websites."""
                 st.write("1. Enter your Perplexity API key in the sidebar")
                 st.write("2. Type a property name or location")
                 st.write("3. Choose search type (Text/Images/Both)")
-                st.write("4. Select model (sonar is faster, sonar-pro is more detailed)")
+                st.write("4. Select model (small is faster, large is more detailed)")
                 st.write("5. Click Search")
                 
                 st.write("**Tips:**")
@@ -199,4 +208,4 @@ if st.button("Test Image") and test_url:
 
 # Footer
 st.markdown("---")
-st.markdown("**Note:** Results depend on Perplexity API data availability and your API key permissions.")
+st.markdown("**Note:** Results depend on Perplexity API data availability and your API key permissions. For API details, visit [Perplexity API](https://docs.perplexity.ai/).")
