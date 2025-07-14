@@ -130,16 +130,20 @@ def make_api_request(prompt, model, search_type_name):
     body = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 2000,
+        "max_tokens": 1000,  # Reduced for faster response
         "temperature": 0.2
     }
+    
+    # Add debug info
+    st.write(f"🔍 **Debug**: Making API request to model: `{model}`")
+    st.write(f"📝 **Prompt length**: {len(prompt)} characters")
     
     try:
         response = requests.post(
             "https://api.perplexity.ai/chat/completions",
             headers=headers,
             json=body,
-            timeout=60
+            timeout=30  # Reduced timeout
         )
         
         if response.status_code == 400:
@@ -183,23 +187,16 @@ def make_api_request(prompt, model, search_type_name):
 
 def search_text_data(query, model):
     """Search for text-based real estate data"""
-    prompt = f"""
-Search for comprehensive information about this property: "{query}"
+    prompt = f"""Find key information about this property: "{query}"
 
-Find and provide the following in a structured format:
-1. RERA Registration details (number, status, approval date)
-2. Builder/Developer information
-3. Project specifications (total units, floors, towers)
-4. Pricing details for different configurations
-5. Possession timeline and construction status
-6. Floor plan details and unit sizes
-7. Amenities and facilities
-8. Location advantages and connectivity
-9. Legal clearances and approvals
-10. Recent market rates and price trends
+Include:
+- RERA details and status
+- Builder/developer name
+- Pricing for different configurations
+- Project specifications
+- Location and connectivity
 
-Format the response as structured data that can be displayed in tables.
-"""
+Keep response concise and factual."""
     
     result = make_api_request(prompt, model, "Text Data")
     if result:
@@ -208,32 +205,32 @@ Format the response as structured data that can be displayed in tables.
 
 def search_images(query, model):
     """Search for property images"""
-    prompt = f"""
-Find high-quality images for this property: "{query}"
+    prompt = f"""Find direct image URLs for the property: "{query}"
 
-Search for and provide direct URLs to:
-1. Exterior building views
-2. Interior sample flats/units
-3. Amenities (gym, pool, clubhouse)
-4. Floor plans and layouts
-5. Location and surroundings
-6. Construction progress (if under development)
+Please provide ONLY direct image URLs (ending in .jpg, .jpeg, .png, .webp) from real estate websites.
 
-Provide only direct image URLs from reliable real estate websites like:
-- 99acres.com
-- magicbricks.com
-- housing.com
-- squareyards.com
-- builder's official website
+List them as:
+URL1: https://example.com/image1.jpg
+URL2: https://example.com/image2.jpg
+URL3: https://example.com/image3.jpg
 
-Format as a JSON list of image URLs with descriptions:
-{{"images": [{{"url": "https://...", "description": "Exterior view"}}, ...]}}
-"""
+Do not include any other text or formatting."""
     
     result = make_api_request(prompt, model, "Image Search")
     if result:
         return result["choices"][0]["message"]["content"]
     return None
+
+# Add a test API button
+if api_key:
+    if st.sidebar.button("🧪 Test API Key"):
+        with st.sidebar:
+            with st.spinner("Testing API..."):
+                test_result = make_api_request("What is 2+2?", "sonar", "Test")
+                if test_result:
+                    st.success("✅ API key works!")
+                else:
+                    st.error("❌ API key test failed")
 
 # Main search functionality
 if st.button("🔍 Fetch Data", type="primary", disabled=not api_key or not query):
@@ -247,91 +244,138 @@ if st.button("🔍 Fetch Data", type="primary", disabled=not api_key or not quer
         
         with tab1:
             if search_type in ["📄 Text Data (RERA, Floor Plans, Pricing)", "🔍 Combined Search"]:
+                st.write("🔄 **Starting text data search...**")
                 with st.spinner("🔍 Fetching text data..."):
                     text_data = search_text_data(query, model_option)
                     
                 if text_data:
+                    st.write("✅ **Text data received successfully!**")
                     st.subheader("📋 Property Information")
                     
-                    # Try to parse structured data
-                    try:
-                        # Split content into sections
-                        sections = text_data.split('\n\n')
-                        
-                        for section in sections:
-                            if section.strip():
-                                lines = section.strip().split('\n')
-                                if len(lines) > 1:
-                                    # Create expandable sections
-                                    with st.expander(f"📊 {lines[0]}"):
-                                        for line in lines[1:]:
-                                            if line.strip():
-                                                st.write(f"• {line.strip()}")
-                                else:
-                                    st.write(section)
-                    except:
-                        # Fallback to raw display
-                        st.write(text_data)
+                    # Display the response in a more readable format
+                    st.write(text_data)
                 else:
-                    st.info("No text data found or API request failed.")
+                    st.warning("⚠️ No text data found or API request failed.")
+            else:
+                st.info("💡 Text data search not selected for this search type.")
         
         with tab2:
             if search_type in ["🖼️ Images Only", "🔍 Combined Search"]:
+                st.write("🔄 **Starting image search...**")
                 with st.spinner("🖼️ Fetching images..."):
                     image_data = search_images(query, model_option)
                 
                 if image_data:
+                    st.write("✅ **Image data received successfully!**")
                     st.subheader("🖼️ Property Images")
                     
-                    # Try to extract JSON
-                    try:
-                        json_match = re.search(r'\{.*\}', image_data, re.DOTALL)
-                        if json_match:
-                            image_json = json.loads(json_match.group())
-                            images = image_json.get('images', [])
+                    # Show raw response for debugging
+                    with st.expander("🔍 Debug: Raw Image Response"):
+                        st.code(image_data)
+                    
+                    # Extract URLs using multiple methods
+                    image_urls = []
+                    
+                    # Method 1: Look for direct URLs in the text
+                    import re
+                    url_pattern = r'https?://[^\s<>"]+\.(?:jpg|jpeg|png|webp|gif)'
+                    found_urls = re.findall(url_pattern, image_data, re.IGNORECASE)
+                    image_urls.extend(found_urls)
+                    
+                    # Method 2: Look for URLs after "URL:" or similar patterns
+                    lines = image_data.split('\n')
+                    for line in lines:
+                        if 'http' in line.lower():
+                            # Extract URL from line
+                            url_match = re.search(r'https?://[^\s<>"]+', line)
+                            if url_match:
+                                url = url_match.group()
+                                if any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif']):
+                                    image_urls.append(url)
+                    
+                    # Remove duplicates
+                    image_urls = list(set(image_urls))
+                    
+                    # Fallback: If no images found, try a different approach
+                    if not image_urls:
+                        st.info("🔄 Trying alternative image search...")
+                        
+                        # Try a simpler prompt
+                        simple_prompt = f"Show me photos of {query} property building exterior interior"
+                        simple_result = make_api_request(simple_prompt, model_option, "Simple Image Search")
+                        
+                        if simple_result:
+                            simple_data = simple_result["choices"][0]["message"]["content"]
+                            st.write("**Alternative search result:**")
+                            st.write(simple_data)
                             
-                            if images:
-                                st.success(f"✅ Found {len(images)} images")
+                            # Try to extract URLs again
+                            simple_urls = re.findall(url_pattern, simple_data, re.IGNORECASE)
+                            if simple_urls:
+                                st.success(f"✅ Found {len(simple_urls)} additional URLs!")
+                                image_urls.extend(simple_urls)
+                                image_urls = list(set(image_urls))  # Remove duplicates again
+                    
+                    if image_urls:
+                        # Create image gallery
+                        cols = st.columns(min(3, len(image_urls)))
+                        
+                        for i, img_url in enumerate(image_urls[:6]):  # Limit to 6 images
+                            with cols[i % 3]:
+                                st.write(f"**Image {i+1}:**")
                                 
-                                # Create image gallery
-                                cols = st.columns(3)
-                                for i, img_data in enumerate(images):
-                                    with cols[i % 3]:
-                                        if isinstance(img_data, dict):
-                                            img_url = img_data.get('url', '')
-                                            description = img_data.get('description', f'Image {i+1}')
-                                        else:
-                                            img_url = img_data
-                                            description = f'Image {i+1}'
-                                        
-                                        if img_url and img_url.startswith('http'):
-                                            try:
-                                                # Create clickable image thumbnail
-                                                if st.button(f"🖼️ View {description}", key=f"img_{i}"):
-                                                    st.session_state.selected_image = img_url
-                                                
-                                                # Show thumbnail
-                                                st.image(img_url, caption=description, width=200)
-                                            except:
-                                                st.warning(f"⚠️ Could not load: {description}")
+                                # Show clickable button
+                                if st.button(f"🖼️ View Image {i+1}", key=f"img_btn_{i}"):
+                                    st.session_state.selected_image = img_url
                                 
-                                # Display selected image in full size
-                                if st.session_state.selected_image:
-                                    st.subheader("🔍 Full Size View")
-                                    st.image(st.session_state.selected_image, use_column_width=True)
-                                    if st.button("❌ Close"):
-                                        st.session_state.selected_image = None
-                                        st.rerun()
-                            else:
-                                st.info("No image URLs found in the response.")
-                        else:
-                            st.warning("Could not parse image data as JSON.")
-                            st.write("Raw response:", image_data)
-                    except Exception as e:
-                        st.error(f"Error parsing image data: {str(e)}")
-                        st.write("Raw response:", image_data)
+                                # Try to display thumbnail
+                                try:
+                                    st.image(img_url, caption=f"Image {i+1}", width=200)
+                                    st.success(f"✅ Image {i+1} loaded")
+                                except Exception as e:
+                                    st.error(f"❌ Failed to load Image {i+1}")
+                                    st.code(img_url)
+                                    st.write(f"Error: {str(e)}")
+                        
+                        # Display selected image in full size
+                        if st.session_state.selected_image:
+                            st.subheader("🔍 Full Size View")
+                            try:
+                                st.image(st.session_state.selected_image, use_column_width=True)
+                                st.code(st.session_state.selected_image)
+                            except Exception as e:
+                                st.error(f"Error displaying full size image: {str(e)}")
+                            
+                            if st.button("❌ Close Full View"):
+                                st.session_state.selected_image = None
+                                st.rerun()
+                    # Test images section
+                    st.subheader("🧪 Test Image Display")
+                    test_images = [
+                        "https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=400",
+                        "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=400",
+                        "https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=400"
+                    ]
+                    
+                    if st.button("🧪 Test with Sample Images"):
+                        st.write("Testing image display with known working URLs...")
+                        for i, test_url in enumerate(test_images):
+                            try:
+                                st.image(test_url, caption=f"Test Image {i+1}", width=200)
+                                st.success(f"✅ Test image {i+1} loaded successfully")
+                            except Exception as e:
+                                st.error(f"❌ Test image {i+1} failed: {str(e)}")
+                    
+                    if not image_urls:
+                        st.warning("⚠️ No valid image URLs found in the response.")
+                        st.info("💡 Try searching for a more popular property or use a different model.")
+                        st.info("💡 You can also manually add image URLs using the input above.")
                 else:
-                    st.info("No image data found or API request failed.")
+                    st.warning("⚠️ No image data found or API request failed.")
+            else:
+                st.info("💡 Image search not selected for this search type.")
+            else:
+                st.info("💡 Image search not selected for this search type.")
         
         with tab3:
             st.subheader("💰 Cost Breakdown")
